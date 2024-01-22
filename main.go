@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -69,44 +70,54 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
-
 	decoder := json.NewDecoder(r.Body)
-	chirp := struct {
+	var chirp struct {
 		Body string `json:"body"`
-	}{}
-	err := decoder.Decode(&chirp)
-
-	if err != nil {
-		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+	}
+	if err := decoder.Decode(&chirp); err != nil {
+		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
 	}
-	if len(chirp.Body) >= 140 {
-		chirpError, err := json.Marshal(struct {
-			Error string `json:"error"`
-		}{
-			Error: "Chirp is too long",
-		})
-		if err != nil {
-			respondWithError(w, 500, err.Error())
-			return
-		}
-		respondWithError(w, 400, string(chirpError))
+
+	if err := validateChirpLength(w, chirp.Body, 140); err != nil {
 		return
 	}
 
 	// params is a struct with data populated successfully
 
-	validChirp, err := json.Marshal(struct {
+	validChirp := struct {
 		CleanedBody string `json:"cleaned_body"`
 	}{
 		CleanedBody: cleanBody(chirp.Body),
-	})
+	}
+
+	err := respondWithJSON(w, 200, validChirp)
 	if err != nil {
-		respondWithError(w, 500, fmt.Sprintf("Error marshalling JSON: %s", err))
+		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error marshalling JSON: %s", err))
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(validChirp)
+}
+
+func validateChirpLength(w http.ResponseWriter, body string, maxLen int) error {
+	if len(body) >= maxLen {
+		chirpError := struct {
+			Error string `json:"error"`
+		}{
+			Error: "Chirp is too long",
+		}
+		err := respondWithJSON(w, http.StatusBadRequest, chirpError)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+		}
+		return errors.New(fmt.Sprintf("Bad length, max length: %d, was: %d", maxLen, len(body)))
+	}
+	return nil
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	return json.NewEncoder(w).Encode(payload)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
