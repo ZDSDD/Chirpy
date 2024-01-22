@@ -68,57 +68,49 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-type Chirp struct {
-	Body string `json:"body"`
-}
-
-type ChirpError struct {
-	Error string `json:"error"`
-}
-
-type ChirpValid struct {
-	Valid bool `json:"valid"`
-}
-
 func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
-	chirp := Chirp{}
+	chirp := struct {
+		Body string `json:"body"`
+	}{}
 	err := decoder.Decode(&chirp)
 
 	if err != nil {
-		// an error will be thrown if the JSON is invalid or has the wrong types
-		// any missing fields will simply have their values in the struct set to their zero value
-		log.Printf("Error decoding parameters: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
 	}
 	if len(chirp.Body) >= 140 {
-		w.WriteHeader(400)
-		chirpError, err := json.Marshal(ChirpError{
+		chirpError, err := json.Marshal(struct {
+			Error string `json:"error"`
+		}{
 			Error: "Chirp is too long",
 		})
 		if err != nil {
-			log.Printf("Error marshalling JSON: %s", err)
-			w.WriteHeader(500)
+			respondWithError(w, 500, err.Error())
 			return
 		}
-		w.Write(chirpError)
+		respondWithError(w, 400, string(chirpError))
 		return
 	}
 
 	// params is a struct with data populated successfully
 
-
-
-	validChirp, err := json.Marshal(Chirp{
-		Body: cleanBody(chirp.Body),
+	validChirp, err := json.Marshal(struct {
+		CleanedBody string `json:"cleaned_body"`
+	}{
+		CleanedBody: cleanBody(chirp.Body),
 	})
 	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, 500, fmt.Sprintf("Error marshalling JSON: %s", err))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(validChirp)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	log.Print(msg)
+	w.WriteHeader(code)
+	w.Write([]byte(msg))
 }
