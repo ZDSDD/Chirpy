@@ -2,13 +2,21 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
+	"sort"
 
+	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 )
+
+const (
+	databasePath = "internal/database/database.json"
+)
+
+type DBconfig struct {
+	localDB *database.DB
+}
 
 func main() {
 	const filepathRoot = "."
@@ -16,6 +24,14 @@ func main() {
 
 	apiCfg := apiConfig{
 		fileserverHits: 0,
+	}
+	DBconf := DBconfig{}
+
+	if db, err := database.NewDB(databasePath); err == nil {
+		DBconf.localDB = db
+	} else {
+		log.Fatal(err)
+		return
 	}
 
 	router := chi.NewRouter()
@@ -26,7 +42,8 @@ func main() {
 	apiRouter := chi.NewRouter()
 	apiRouter.Get("/healthz", readinessHandler)
 	apiRouter.Get("/reset", apiCfg.resetHandler)
-	apiRouter.Post("/validate_chirp", validateChirpHandler)
+	apiRouter.Post("/chirps", DBconf.postChirpHandler)
+	apiRouter.Get("/chirps", DBconf.getChirpHandler)
 	router.Mount("/api", apiRouter)
 
 	adminRouter := chi.NewRouter()
@@ -44,84 +61,38 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
+func (dbConf *DBconfig) postChirpHandler(w http.ResponseWriter, r *http.Request) {
+	validatedChirp := database.Chirp{}
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&validatedChirp); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	err := validateChirpBody(validatedChirp.Body, w)
+
+	if err != nil {
+		log.Printf("error validating a chirp: %s", err)
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	newChirp, err := dbConf.localDB.CreateChirp(validatedChirp.Body)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+	}
+	respondWithJSON(w, 201, newChirp)
+}
+
+func (dbConf *DBconfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
+	chirps, err := dbConf.localDB.GetChirps()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sort.Slice(chirps, func(i, j int) bool { return chirps[i].ID < chirps[j].ID })
+	respondWithJSON(w, 200, chirps)
+}
+
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8 ")
 	w.Write([]byte(http.StatusText(http.StatusOK)))
-}
-
-func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(fmt.Sprint("<h1>Welcome, Chirpy Admin</h1>")))
-	w.Write([]byte(fmt.Sprintf("<p>Chirpy has been visited %d times!</p>", cfg.fileserverHits)))
-	w.WriteHeader(http.StatusOK)
-}
-
-func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
-	cfg.fileserverHits = 0
-	w.WriteHeader(http.StatusOK)
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileserverHits += 1
-		//w.Header().Set("Cache-Control", "no-cache")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	var chirp struct {
-		Body string `json:"body"`
-	}
-	if err := decoder.Decode(&chirp); err != nil {
-		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error decoding parameters: %s", err))
-		return
-	}
-
-	if err := validateChirpLength(w, chirp.Body, 140); err != nil {
-		return
-	}
-
-	// params is a struct with data populated successfully
-
-	validChirp := struct {
-		CleanedBody string `json:"cleaned_body"`
-	}{
-		CleanedBody: cleanBody(chirp.Body),
-	}
-
-	err := respondWithJSON(w, 200, validChirp)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Error marshalling JSON: %s", err))
-		return
-	}
-}
-
-func validateChirpLength(w http.ResponseWriter, body string, maxLen int) error {
-	if len(body) >= maxLen {
-		chirpError := struct {
-			Error string `json:"error"`
-		}{
-			Error: "Chirp is too long",
-		}
-		err := respondWithJSON(w, http.StatusBadRequest, chirpError)
-		if err != nil {
-			respondWithError(w, http.StatusInternalServerError, err.Error())
-		}
-		return errors.New(fmt.Sprintf("Bad length, max length: %d, was: %d", maxLen, len(body)))
-	}
-	return nil
-}
-
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	return json.NewEncoder(w).Encode(payload)
-}
-
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-	log.Print(msg)
-	w.WriteHeader(code)
-	w.Write([]byte(msg))
 }
