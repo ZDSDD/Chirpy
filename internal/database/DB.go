@@ -14,12 +14,18 @@ type Chirp struct {
 	Body string `json:"body"`
 }
 
+type User struct {
+	ID    int    `json:"id"`
+	Email string `json:"email"`
+}
+
 type DB struct {
 	path string
 	mux  *sync.RWMutex
 }
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users  map[int]User  `json:"users"`
 }
 
 // NewDB creates a new database connection
@@ -51,7 +57,6 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 
 	// Update the in-memory DBStructure with the new chirp
 	data.Chirps[newChirp.ID] = newChirp
-	log.Printf("%v", data.Chirps[newChirp.ID])
 	// Write the updated data back to the file
 	err = db.writeDB(data)
 	if err != nil {
@@ -59,6 +64,30 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	}
 
 	return newChirp, nil
+}
+
+func (db *DB) CreateUser(email string) (User, error) {
+	db.ensureDB()
+	data, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	newUser := User{
+		Email: email,
+		ID:    len(data.Users) + 1,
+	}
+
+	// Update the in-memory DBStructure with the new chirp
+	data.Users[newUser.ID] = newUser
+	// Write the updated data back to the file
+	err = db.writeDB(data)
+	if err != nil {
+		return User{}, err
+	}
+
+	return newUser, nil
+
 }
 
 // GetChirps returns all chirps in the database
@@ -71,6 +100,21 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 	}
 	for _, v := range data.Chirps {
 		result = append(result, v)
+	}
+	return result, nil
+}
+
+func (db *DB) GetChirp(id int) (Chirp, error) {
+	db.ensureDB()
+	data, err := db.loadDB()
+	if err != nil {
+		return Chirp{}, err
+	}
+
+	result, ok := data.Chirps[id]
+
+	if !ok {
+		return Chirp{}, errors.New(fmt.Sprintf("No such key [%d]", id))
 	}
 	return result, nil
 }
@@ -96,28 +140,32 @@ func checkFileExists(filePath string) bool {
 
 // loadDB reads the database file into memory
 func (db *DB) loadDB() (DBStructure, error) {
-	allChirpsRaw, err := os.ReadFile(db.path)
+	allDataRaw, err := os.ReadFile(db.path)
 	if err != nil {
 		return DBStructure{}, err
 	}
 
-	var allChirps DBStructure
-	err = json.Unmarshal(allChirpsRaw, &allChirps)
+	var dbStructure DBStructure
+	err = json.Unmarshal(allDataRaw, &dbStructure)
 	if err != nil {
-		log.Printf("error decoding sakura response: %v", err)
+		log.Printf("error decoding allChirpsRaw: %v", err)
 		if e, ok := err.(*json.SyntaxError); ok {
 			log.Printf("syntax error at byte offset %d", e.Offset)
 		}
-		log.Printf("sakura response: %q", allChirpsRaw)
+		log.Printf("sakura response: %q", allDataRaw)
 		return DBStructure{}, err
 	}
 
 	resDBStructure := DBStructure{
 		Chirps: make(map[int]Chirp),
+		Users:  make(map[int]User),
 	}
 
-	for _, v := range allChirps.Chirps {
+	for _, v := range dbStructure.Chirps {
 		resDBStructure.Chirps[v.ID] = v
+	}
+	for _, v := range dbStructure.Users {
+		resDBStructure.Users[v.ID] = v
 	}
 
 	return resDBStructure, nil

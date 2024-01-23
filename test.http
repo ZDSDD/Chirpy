@@ -9,3 +9,14 @@ Content-Type: application/json
 
 
 GET  http://localhost:8080/api/chirps
+
+###
+GET  http://localhost:8080/api/chirps/2
+
+###
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
