@@ -3,9 +3,11 @@ package main
 import (
 	"log"
 	"net/http"
-
+	"os"
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -13,6 +15,8 @@ const (
 )
 
 func main() {
+	godotenv.Load()
+
 	const filepathRoot = "."
 	const port = "8080"
 
@@ -24,6 +28,7 @@ func main() {
 	apiCfg := apiConfig{
 		fileserverHits: 0,
 		localDB:        db,
+		jwtSecret:		os.Getenv("JWT_SECRET"),
 	}
 
 	router := chi.NewRouter()
@@ -38,6 +43,7 @@ func main() {
 	apiRouter.Get("/chirps", apiCfg.getChirpHandler)
 	apiRouter.Get("/chirps/{chirpID}", apiCfg.getChirpByIDHandler)
 	apiRouter.Post("/users", apiCfg.postUserHandler)
+	apiRouter.Post("/login", apiCfg.postLoginHandler)
 	router.Mount("/api", apiRouter)
 
 	adminRouter := chi.NewRouter()

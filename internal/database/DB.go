@@ -2,11 +2,12 @@ package database
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"sync"
+	"golang.org/x/crypto/bcrypt"
+	"errors"
 )
 
 type Chirp struct {
@@ -19,6 +20,11 @@ type User struct {
 	Email string `json:"email"`
 }
 
+type UserPassword struct {
+	Email string `json:"email"`
+	Password []byte `json:"Password"`
+}
+
 type DB struct {
 	path string
 	mux  *sync.RWMutex
@@ -26,97 +32,30 @@ type DB struct {
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
 	Users  map[int]User  `json:"users"`
+	Passwords map[string]UserPassword `json:"passwords"`
 }
 
-// NewDB creates a new database connection
-// and creates the database file if it doesn't exist
-func NewDB(path string) (*DB, error) {
-	newDB := DB{
-		path: path,
-		mux:  &sync.RWMutex{},
-	}
-	err := newDB.ensureDB()
-	if err != nil {
-		return nil, err
-	}
-	return &newDB, nil
-}
 
-// CreateChirp creates a new chirp and saves it to disk
-func (db *DB) CreateChirp(body string) (Chirp, error) {
-	db.ensureDB()
-	data, err := db.loadDB()
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	newChirp := Chirp{
-		Body: body,
-		ID:   len(data.Chirps) + 1,
-	}
-
-	// Update the in-memory DBStructure with the new chirp
-	data.Chirps[newChirp.ID] = newChirp
-	// Write the updated data back to the file
-	err = db.writeDB(data)
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	return newChirp, nil
-}
-
-func (db *DB) CreateUser(email string) (User, error) {
+func (db *DB) Login(password, email string) (User, error){
 	db.ensureDB()
 	data, err := db.loadDB()
 	if err != nil {
 		return User{}, err
 	}
 
-	newUser := User{
-		Email: email,
-		ID:    len(data.Users) + 1,
+	ok := bcrypt.CompareHashAndPassword(data.Passwords[email].Password,[]byte(password))
+
+	if ok != nil{
+		return User{},ok
 	}
 
-	// Update the in-memory DBStructure with the new chirp
-	data.Users[newUser.ID] = newUser
-	// Write the updated data back to the file
-	err = db.writeDB(data)
-	if err != nil {
-		return User{}, err
+	for _, v := range data.Users {
+		if v.Email == email{
+			return v,nil
+		}
 	}
-
-	return newUser, nil
-
-}
-
-// GetChirps returns all chirps in the database
-func (db *DB) GetChirps() ([]Chirp, error) {
-	var result []Chirp
-	db.ensureDB()
-	data, err := db.loadDB()
-	if err != nil {
-		return []Chirp{}, err
-	}
-	for _, v := range data.Chirps {
-		result = append(result, v)
-	}
-	return result, nil
-}
-
-func (db *DB) GetChirp(id int) (Chirp, error) {
-	db.ensureDB()
-	data, err := db.loadDB()
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	result, ok := data.Chirps[id]
-
-	if !ok {
-		return Chirp{}, errors.New(fmt.Sprintf("No such key [%d]", id))
-	}
-	return result, nil
+	//this shouldn't happen at this point
+	return User{}, errors.New("Failed to find user in db")
 }
 
 // ensureDB creates a new database file if it doesn't exist
@@ -130,12 +69,6 @@ func (db *DB) ensureDB() error {
 		db.writeDB(DBStructure{})
 	}
 	return nil
-}
-
-func checkFileExists(filePath string) bool {
-	_, error := os.Stat(filePath)
-	//return !os.IsNotExist(err)
-	return !errors.Is(error, os.ErrNotExist)
 }
 
 // loadDB reads the database file into memory
@@ -159,6 +92,7 @@ func (db *DB) loadDB() (DBStructure, error) {
 	resDBStructure := DBStructure{
 		Chirps: make(map[int]Chirp),
 		Users:  make(map[int]User),
+		Passwords: make(map[string]UserPassword),
 	}
 
 	for _, v := range dbStructure.Chirps {
@@ -167,7 +101,9 @@ func (db *DB) loadDB() (DBStructure, error) {
 	for _, v := range dbStructure.Users {
 		resDBStructure.Users[v.ID] = v
 	}
-
+	for _, v := range dbStructure.Passwords {
+		resDBStructure.Passwords[v.Email] = v
+	}
 	return resDBStructure, nil
 }
 

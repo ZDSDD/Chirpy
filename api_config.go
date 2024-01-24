@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
@@ -15,6 +18,7 @@ import (
 type apiConfig struct {
 	fileserverHits int
 	localDB        *database.DB
+	jwtSecret      string
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +74,7 @@ func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(chirps, func(i, j int) bool { return chirps[i].ID < chirps[j].ID })
 	respondWithJSON(w, 200, chirps)
 }
+
 func (cfg *apiConfig) getChirpByIDHandler(w http.ResponseWriter, r *http.Request) {
 	chirpIDstring := chi.URLParam(r, "chirpID")
 	chirpID, err := strconv.Atoi(chirpIDstring)
@@ -86,22 +91,89 @@ func (cfg *apiConfig) getChirpByIDHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (cfg *apiConfig) postUserHandler(w http.ResponseWriter, r *http.Request) {
-	user := database.User{}
+
+	type params struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	requestBody := params{}
 	decoder := json.NewDecoder(r.Body)
 
-	if err := decoder.Decode(&user); err != nil {
+	if err := decoder.Decode(&requestBody); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	createdUser, err := cfg.localDB.CreateUser(user.Email)
+	createdUser, err := cfg.localDB.CreateUser(requestBody.Email, requestBody.Password)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	err = respondWithJSON(w, 201, createdUser)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
+}
+
+func (cfg *apiConfig) postLoginHandler(w http.ResponseWriter, r *http.Request) {
+
+	type params struct {
+		Password           string `json:"password"`
+		Email              string `json:"email"`
+		Expires_in_seconds int    `json:"expires_in_seconds"`
+	}
+	requestBody := params{}
+	decoder := json.NewDecoder(r.Body)
+
+	if err := decoder.Decode(&requestBody); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	user, err := cfg.localDB.Login(requestBody.Password, requestBody.Email)
+
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	var expirationTime time.Time
+
+	if requestBody.Expires_in_seconds > 0 && requestBody.Expires_in_seconds < 24 {
+		expirationTime = time.Now().Add(time.Duration(requestBody.Expires_in_seconds))
+	} else {
+		expirationTime = time.Now().Add(time.Duration(time.Now().UTC().Day()))
+	}
+	newJWT := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(expirationTime),
+		Subject:   strconv.Itoa(user.ID),
+	})
+
+	signedToken, err := newJWT.SignedString(cfg.jwtSecret)
+
+	if err != nil {
+
+	}
+
+	response := struct {
+		id    int
+		email string
+		token string
+	}{
+		user.ID,
+		user.Email,
+		signedToken,
+	}
+
+	err = respondWithJSON(w, 200, response)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 }
