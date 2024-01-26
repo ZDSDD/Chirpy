@@ -7,9 +7,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
@@ -134,41 +131,12 @@ func (cfg *apiConfig) postLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := cfg.localDB.Login(requestBody.Password, requestBody.Email)
+
+	response, err := cfg.localDB.Login(requestBody.Password, requestBody.Email,cfg.jwtSecret,requestBody.Expires_in_seconds)
 
 	if err != nil {
-		respondWithError(w, 401, err.Error())
+		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-
-	var expirationTime time.Time
-
-	if requestBody.Expires_in_seconds > 0 && requestBody.Expires_in_seconds < 24 {
-		expirationTime = time.Now().Add(time.Duration(requestBody.Expires_in_seconds))
-	} else {
-		expirationTime = time.Now().Add(time.Duration(time.Now().UTC().Day()))
-	}
-	newJWT := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    "chirpy",
-		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		ExpiresAt: jwt.NewNumericDate(expirationTime),
-		Subject:   strconv.Itoa(user.ID),
-	})
-
-	signedToken, err := newJWT.SignedString(cfg.jwtSecret)
-
-	if err != nil {
-
-	}
-
-	response := struct {
-		id    int
-		email string
-		token string
-	}{
-		user.ID,
-		user.Email,
-		signedToken,
 	}
 
 	err = respondWithJSON(w, 200, response)
@@ -176,4 +144,7 @@ func (cfg *apiConfig) postLoginHandler(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+}
+func (cfg *apiConfig) putLoginHandler(w http.ResponseWriter, r *http.Request) {
+
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -44,6 +43,7 @@ func main() {
 	apiRouter.Get("/chirps/{chirpID}", apiCfg.getChirpByIDHandler)
 	apiRouter.Post("/users", apiCfg.postUserHandler)
 	apiRouter.Post("/login", apiCfg.postLoginHandler)
+	apiRouter.Put("/users",apiCfg.putLoginHandler)
 	router.Mount("/api", apiRouter)
 
 	adminRouter := chi.NewRouter()

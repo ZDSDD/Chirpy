@@ -2,12 +2,17 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"sync"
+	"time"
+
 	"golang.org/x/crypto/bcrypt"
-	"errors"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Chirp struct {
@@ -21,8 +26,13 @@ type User struct {
 }
 
 type UserPassword struct {
-	Email string `json:"email"`
+	Email    string `json:"email"`
 	Password []byte `json:"Password"`
+}
+
+type JWTUser struct {
+	token string
+	user  User
 }
 
 type DB struct {
@@ -30,32 +40,81 @@ type DB struct {
 	mux  *sync.RWMutex
 }
 type DBStructure struct {
-	Chirps map[int]Chirp `json:"chirps"`
-	Users  map[int]User  `json:"users"`
+	Chirps    map[int]Chirp           `json:"chirps"`
+	Users     map[int]User            `json:"users"`
 	Passwords map[string]UserPassword `json:"passwords"`
+	JWTs      map[string]JWTUser      `json:"jwts"`
 }
 
+type loginResponse struct {
+	id    int
+	email string
+	token string
+}
 
-func (db *DB) Login(password, email string) (User, error){
+func (db *DB) Login(password, email, jwtSecret string, expires_in_seconds int) (loginResponse, error) {
 	db.ensureDB()
 	data, err := db.loadDB()
 	if err != nil {
-		return User{}, err
+		return loginResponse{}, err
 	}
 
-	ok := bcrypt.CompareHashAndPassword(data.Passwords[email].Password,[]byte(password))
+	ok := bcrypt.CompareHashAndPassword(data.Passwords[email].Password, []byte(password))
 
-	if ok != nil{
-		return User{},ok
+	if ok != nil {
+		return loginResponse{}, ok
 	}
 
+	//Handle generating JWT
+
+	// can't look at this
 	for _, v := range data.Users {
-		if v.Email == email{
-			return v,nil
+		if v.Email == email {
+
+			signedToken, err := generateSignedToken(expires_in_seconds, v.ID, jwtSecret)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			data.JWTs[signedToken] = JWTUser{
+				token: signedToken,
+				user:  v,
+			}
+			response := loginResponse{
+				v.ID,
+				v.Email,
+				signedToken,
+			}
+			return response, nil
 		}
 	}
 	//this shouldn't happen at this point
-	return User{}, errors.New("Failed to find user in db")
+	return loginResponse{}, errors.New("Failed to find user in db")
+}
+
+func generateSignedToken(expires_in_seconds, userID int, jwtSecret string) (string, error) {
+
+	var expirationTime time.Time
+
+	if expires_in_seconds > 0 && expires_in_seconds < 24 {
+		expirationTime = time.Now().Add(time.Duration(expires_in_seconds))
+	} else {
+		expirationTime = time.Now().Add(time.Duration(time.Now().UTC().Day()))
+	}
+	newJWT := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(expirationTime),
+		Subject:   strconv.Itoa(userID),
+	})
+	log.Printf("jwtSecret: %s", jwtSecret)
+	signedToken, err := newJWT.SignedString(jwtSecret)
+
+	if err != nil {
+		log.Print(err)
+		return "", errors.New("Error generating signed token")
+	}
+
+	return signedToken, nil
 }
 
 // ensureDB creates a new database file if it doesn't exist
@@ -90,9 +149,10 @@ func (db *DB) loadDB() (DBStructure, error) {
 	}
 
 	resDBStructure := DBStructure{
-		Chirps: make(map[int]Chirp),
-		Users:  make(map[int]User),
+		Chirps:    make(map[int]Chirp),
+		Users:     make(map[int]User),
 		Passwords: make(map[string]UserPassword),
+		JWTs:      make(map[string]JWTUser),
 	}
 
 	for _, v := range dbStructure.Chirps {
@@ -103,6 +163,9 @@ func (db *DB) loadDB() (DBStructure, error) {
 	}
 	for _, v := range dbStructure.Passwords {
 		resDBStructure.Passwords[v.Email] = v
+	}
+	for _, v := range dbStructure.JWTs {
+		resDBStructure.JWTs[v.token] = v
 	}
 	return resDBStructure, nil
 }
