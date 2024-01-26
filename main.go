@@ -1,33 +1,51 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"os"
+
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 )
 
-const (
-	databasePath = "internal/database/database.json"
-)
+type apiConfig struct {
+	fileserverHits int
+	DB             *database.DB
+	jwtSecret      string
+}
 
 func main() {
-	godotenv.Load()
-
 	const filepathRoot = "."
 	const port = "8080"
 
-	db, err := database.NewDB(databasePath)
+	godotenv.Load(".env")
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is not set")
+	}
+
+	db, err := database.NewDB("database.json")
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	dbg := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+	if dbg != nil && *dbg {
+		err := db.ResetDB()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	apiCfg := apiConfig{
 		fileserverHits: 0,
-		localDB:        db,
-		jwtSecret:		os.Getenv("JWT_SECRET"),
+		DB:             db,
+		jwtSecret:      jwtSecret,
 	}
 
 	router := chi.NewRouter()
@@ -36,18 +54,27 @@ func main() {
 	router.Handle("/app/*", fsHandler)
 
 	apiRouter := chi.NewRouter()
-	apiRouter.Get("/healthz", readinessHandler)
-	apiRouter.Get("/reset", apiCfg.resetHandler)
-	apiRouter.Post("/chirps", apiCfg.postChirpHandler)
-	apiRouter.Get("/chirps", apiCfg.getChirpHandler)
-	apiRouter.Get("/chirps/{chirpID}", apiCfg.getChirpByIDHandler)
-	apiRouter.Post("/users", apiCfg.postUserHandler)
-	apiRouter.Post("/login", apiCfg.postLoginHandler)
-	apiRouter.Put("/users",apiCfg.putLoginHandler)
+	apiRouter.Get("/healthz", handlerReadiness)
+	apiRouter.Get("/reset", apiCfg.handlerReset)
+
+	apiRouter.Post("/login", apiCfg.handlerLogin)
+
+	apiRouter.Post("/users", apiCfg.handlerUsersCreate)
+	apiRouter.Put("/users", apiCfg.handlerUsersUpdate)
+
+	apiRouter.Post("/chirps", apiCfg.handlerChirpsCreate)
+	apiRouter.Get("/chirps", apiCfg.handlerChirpsRetrieve)
+	apiRouter.Get("/chirps/{chirpID}", apiCfg.handlerChirpsGet)
+	apiRouter.Delete("/chirps/{chirpID}", apiCfg.handlerChirpsDelete)
+	apiRouter.Post("/polka/webhooks", apiCfg.handlerPolkaWebhooksPost)
+	
+
+	apiRouter.Post("/refresh", apiCfg.handlerRefresh)
+	apiRouter.Post("/revoke", apiCfg.handlerRevoke)
 	router.Mount("/api", apiRouter)
 
 	adminRouter := chi.NewRouter()
-	adminRouter.Get("/metrics", apiCfg.metricsHandler)
+	adminRouter.Get("/metrics", apiCfg.handlerMetrics)
 	router.Mount("/admin", adminRouter)
 
 	corsMux := middlewareCors(router)
@@ -59,9 +86,4 @@ func main() {
 
 	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
 	log.Fatal(srv.ListenAndServe())
-}
-
-func readinessHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/plain; charset=utf-8 ")
-	w.Write([]byte(http.StatusText(http.StatusOK)))
 }

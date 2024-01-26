@@ -1,46 +1,8 @@
-POST http://localhost:8080/api/chirps
-Content-Type: application/json
-
-{
-  "body": "I had something interesting for breakfast"
-}
-
-###
-
-
-GET  http://localhost:8080/api/chirps
-
-###
-GET  http://localhost:8080/api/chirps/2
-
-###
 POST http://localhost:8080/api/users
 Content-Type: application/json
 
 {
-  "password": "04234",
-  "email": "user@example.com"
-}
-
-###
-
-
-POST http://localhost:8080/api/users
-Content-Type: application/json
-
-{
-  "email": "saul@bettercall.com",
-  "password": "123456"
-}
-###
-
-
-POST http://localhost:8080/api/login
-Content-Type: application/json
-
-{
-  "email": "saul@bettercall.com",
+  "email": "walt@breakingbad.com",
   "password": "123456"
 }
 
-###
