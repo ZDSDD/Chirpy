@@ -9,7 +9,7 @@ import (
 )
 
 func (cfg *apiConfig) handlerChirpsDelete(w http.ResponseWriter, r *http.Request) {
-	token, err := auth.GetBearerToken(r.Header)
+	token, err := auth.GetToken(r.Header,auth.BearerPrefix)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT")
 		return
@@ -33,9 +33,9 @@ func (cfg *apiConfig) handlerChirpsDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = cfg.DB.DeleteChirp(userIDInt,chirpID)
+	err = cfg.DB.DeleteChirp(userIDInt, chirpID)
 
-	if err != nil{
+	if err != nil {
 		respondWithError(w, 403, "user not authenticated ")
 	}
 	w.WriteHeader(200)

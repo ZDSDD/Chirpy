@@ -13,13 +13,13 @@ import (
 )
 
 type TokenType string
-
 const (
 	// TokenTypeAccess -
 	TokenTypeAccess TokenType = "chirpy-access"
 	// TokenTypeRefresh -
 	TokenTypeRefresh TokenType = "chirpy-refresh"
 )
+const BearerPrefix = "Bearer"
 
 // ErrNoAuthHeaderIncluded -
 var ErrNoAuthHeaderIncluded = errors.New("not auth header included in request")
@@ -127,14 +127,14 @@ func ValidateJWT(tokenString, tokenSecret string) (string, error) {
 	return userIDString, nil
 }
 
-// GetBearerToken -
-func GetBearerToken(headers http.Header) (string, error) {
+// GetToken -
+func GetToken(headers http.Header, prefix string) (string, error) {
 	authHeader := headers.Get("Authorization")
 	if authHeader == "" {
 		return "", ErrNoAuthHeaderIncluded
 	}
 	splitAuth := strings.Split(authHeader, " ")
-	if len(splitAuth) < 2 || splitAuth[0] != "Bearer" {
+	if len(splitAuth) < 2 || splitAuth[0] != prefix {
 		return "", errors.New("malformed authorization header")
 	}
 
