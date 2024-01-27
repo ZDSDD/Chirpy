@@ -36,18 +36,53 @@ func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	chirps := []Chirp{}
-	for _, dbChirp := range dbChirps {
-		chirps = append(chirps, Chirp{
-			AuthorID: dbChirp.AuthorID,
-			ID:       dbChirp.ID,
-			Body:     dbChirp.Body,
-		})
+	authorID := -1
+
+	s := r.URL.Query().Get("author_id")
+	sortOrder := r.URL.Query().Get("sort")
+	if sortOrder == "" {
+		sortOrder = "asc"
 	}
 
-	sort.Slice(chirps, func(i, j int) bool {
-		return chirps[i].ID < chirps[j].ID
-	})
+	if s != "" {
+		authorID, err = strconv.Atoi(s)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	chirps := []Chirp{}
+
+	// query param was empty
+	if authorID == -1 {
+		for _, dbChirp := range dbChirps {
+			chirps = append(chirps, Chirp{
+				AuthorID: dbChirp.AuthorID,
+				ID:       dbChirp.ID,
+				Body:     dbChirp.Body,
+			})
+		}
+	} else { //query param wasn't empty
+		for _, dbChirp := range dbChirps {
+			if dbChirp.AuthorID != authorID {
+				continue
+			}
+			chirps = append(chirps, Chirp{
+				AuthorID: dbChirp.AuthorID,
+				ID:       dbChirp.ID,
+				Body:     dbChirp.Body,
+			})
+		}
+	}
+	if sortOrder == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].ID > chirps[j].ID
+		})
+	} else {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].ID < chirps[j].ID
+		})
+	}
 
 	respondWithJSON(w, http.StatusOK, chirps)
 }
