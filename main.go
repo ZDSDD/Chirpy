@@ -1,18 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"sync/atomic"
 
+	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -33,7 +39,7 @@ func (cfg *apiConfig) handleMetrics(rw http.ResponseWriter, _ *http.Request) {
 
 // use godot package to load/read the .env file and
 // return the value of the key
-func goDotEnvVariable(key string) string {
+func getEnvVariable(key string) string {
 
 	// load .env file
 	err := godotenv.Load(".env")
@@ -48,12 +54,24 @@ func goDotEnvVariable(key string) string {
 func main() {
 	godotenv.Load()
 	mux := http.NewServeMux()
-	port := goDotEnvVariable("PORT")
+	port := getEnvVariable("PORT")
+	dbURL := getEnvVariable("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error opening database: %s", err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(db)
+
+	cfg := &apiConfig{
+		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
+	}
+
 	server := http.Server{
 		Handler: mux,
 		Addr:    ":" + port,
 	}
-	cfg := &apiConfig{fileserverHits: atomic.Int32{}}
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /api/healthz", handleHealthz)
 	mux.HandleFunc("POST /api/reset", cfg.handleReset)
@@ -105,8 +123,8 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responseWithJson(struct {
-		Valid bool `json:"valid"`
-	}{Valid: true}, w)
+		CleanedBody string `json:"cleaned_body"`
+	}{CleanedBody: cleanProfaneWords(chirp.Body, []string{"kerfuffle", "sharbert", "fornax"})}, w)
 }
 
 func responseWithJson(data interface{}, w http.ResponseWriter) {
@@ -114,7 +132,6 @@ func responseWithJson(data interface{}, w http.ResponseWriter) {
 	if !ok {
 		return
 	}
-	fmt.Print(dat)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(dat)
@@ -139,4 +156,20 @@ func responseWithJsonError(w http.ResponseWriter, message string, errorCode int)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(errorCode)
 	w.Write(dat)
+}
+
+func cleanProfaneWords(s string, profaneWords []string) string {
+	words := strings.Fields(s)
+	var sb strings.Builder
+	for i, word := range words {
+		if slices.Contains(profaneWords, strings.ToLower(word)) {
+			sb.WriteString("****")
+		} else {
+			sb.WriteString(word)
+		}
+		if i < len(words)-1 {
+			sb.WriteRune(' ')
+		}
+	}
+	return sb.String()
 }
