@@ -7,3 +7,6 @@ VALUES (
     $1
 )
 RETURNING *;
+
+-- name: PurgeUsers :exec
+DELETE FROM users;
