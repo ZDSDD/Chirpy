@@ -231,6 +231,15 @@ func (cfg *apiConfig) handleUpgradePolkaUser(w http.ResponseWriter, r *http.Requ
 			UserId string `json:"user_id"`
 		} `json:"data"`
 	}
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 401)
+		return
+	}
+	if apiKey != getEnvVariable("POLKA_KEY") {
+		responseWithJsonError(w, "Unauthorized", 401)
+		return
+	}
 
 	var eventReq eventReqBody
 	json.NewDecoder(r.Body).Decode(&eventReq)
