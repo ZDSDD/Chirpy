@@ -27,6 +27,7 @@ func main() {
 	cfg := &apiConfig{
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
+		jwtSecret:      getEnvVariable("JWT_SECRET"),
 	}
 
 	server := http.Server{
