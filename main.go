@@ -54,8 +54,23 @@ func main() {
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
 	mux.HandleFunc("POST /api/chirps", cfg.handleCreateChirp)
 	mux.HandleFunc("GET /api/chirps", cfg.handleGetChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handleGetChirp)
 	log.Printf("Server run succesffuly on port: %s\n", port)
 	log.Fatal(server.ListenAndServe())
+}
+
+func (cfg *apiConfig) handleGetChirp(w http.ResponseWriter, r *http.Request) {
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		responseWithJsonError(w, "Invalid chirp ID", 400)
+		return
+	}
+	chirpResponse, err := cfg.db.GetChirp(r.Context(), chirpID)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	responseWithJson(mapChirpToResponse(&chirpResponse), w, http.StatusOK)
 }
 
 func handleHealthz(w http.ResponseWriter, r *http.Request) {
