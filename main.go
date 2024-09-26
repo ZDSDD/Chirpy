@@ -52,7 +52,8 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", cfg.handleAdminMetrics)
 	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
-
+	mux.HandleFunc("POST /api/chirps", cfg.handleCreateChirp)
+	mux.HandleFunc("GET /api/chirps", cfg.handleGetChirps)
 	log.Printf("Server run succesffuly on port: %s\n", port)
 	log.Fatal(server.ListenAndServe())
 }
@@ -61,6 +62,62 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK\n"))
+}
+
+func (cfg *apiConfig) handleGetChirps(w http.ResponseWriter, r *http.Request) {
+	chirps, err := cfg.db.GetChirps(r.Context())
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	var chirpsResponse []chirpResponse
+	for _, chirp := range chirps {
+		chirpsResponse = append(chirpsResponse, mapChirpToResponse(&chirp))
+	}
+	responseWithJson(chirpsResponse, w, http.StatusOK)
+}
+
+func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) {
+	type jsonPayload struct {
+		Body   string    `json:"body"`
+		UserId uuid.UUID `json:"user_id"`
+	}
+	jp := jsonPayload{}
+	json.NewDecoder(r.Body).Decode(&jp)
+	if jp.Body == "" {
+		responseWithJsonError(w, "Body is required", 400)
+		return
+	}
+	if jp.UserId == uuid.Nil {
+		responseWithJsonError(w, "User ID is required", 400)
+	}
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   jp.Body,
+		UserID: jp.UserId,
+	})
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	responseWithJson(mapChirpToResponse(&chirp), w, http.StatusCreated)
+}
+
+type chirpResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func mapChirpToResponse(dc *database.Chirp) chirpResponse {
+	return chirpResponse{
+		ID:        dc.ID,
+		Body:      dc.Body,
+		UserID:    dc.UserID,
+		CreatedAt: dc.CreatedAt,
+		UpdatedAt: dc.UpdatedAt,
+	}
 }
 
 func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
