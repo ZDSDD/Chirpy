@@ -20,6 +20,14 @@ VALUES
 DELETE FROM
     users;
 
+-- name: GetUserById :one
+SELECT
+    users.*
+FROM
+    users
+WHERE
+    id = $1;
+
 -- name: GetUserByEmail :one
 SELECT
     users.*

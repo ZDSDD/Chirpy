@@ -57,6 +57,55 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	responseWithJson(mapToJson(&user, token, refreshToken), w, http.StatusOK)
 }
 
+func (cfg *apiConfig) handleRefreshToken(w http.ResponseWriter, r *http.Request, refreshToken string) {
+	rtdb, err := cfg.db.GetRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 401)
+		return
+	}
+	if rtdb.ExpiresAt.Before(time.Now()) {
+		responseWithJsonError(w, "Refresh token expired", 401)
+		return
+	}
+	if rtdb.RevokedAt.Valid {
+		responseWithJsonError(w, "Refresh token revoked", 401)
+		return
+	}
+	user, err := cfg.db.GetUserById(r.Context(), rtdb.UserID)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Hour)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	responseWithJson(map[string]string{"token": token}, w, http.StatusOK)
+}
+func (cfg *apiConfig) requireBearerToken(next func(w http.ResponseWriter, r *http.Request, token string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			responseWithJsonError(w, err.Error(), 401)
+			return
+		}
+		if token == "" {
+			responseWithJsonError(w, "bearer token is required", 400)
+			return
+		}
+		next(w, r, token)
+	}
+}
+func (cfg *apiConfig) handleRevokeToken(w http.ResponseWriter, r *http.Request, refreshToken string) {
+
+	err := cfg.db.RevokeRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(204)
+}
 func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	type UserReqBody struct {
 		Email    string `json:"email"`
