@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZDSDD/Chirpy/internal/auth"
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -83,8 +84,7 @@ func (cfg *apiConfig) handleGetChirps(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type jsonPayload struct {
-		Body   string    `json:"body"`
-		UserId uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 	jp := jsonPayload{}
 	json.NewDecoder(r.Body).Decode(&jp)
@@ -92,12 +92,18 @@ func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) 
 		responseWithJsonError(w, "Body is required", 400)
 		return
 	}
-	if jp.UserId == uuid.Nil {
-		responseWithJsonError(w, "User ID is required", 400)
+	//Check JWT token
+	tokenString, err := auth.GetBearerToken(r.Header)
+	userId, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 401)
+		return
 	}
+
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   jp.Body,
-		UserID: jp.UserId,
+		UserID: userId,
 	})
 	if err != nil {
 		responseWithJsonError(w, err.Error(), 500)

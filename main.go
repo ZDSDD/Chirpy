@@ -34,19 +34,32 @@ func main() {
 		Handler: mux,
 		Addr:    ":" + port,
 	}
+	// Static file handling
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
+
+	// Health check and Metrics endpoints
 	mux.HandleFunc("GET /api/healthz", handleHealthz)
-	mux.HandleFunc("POST /api/reset", cfg.handleReset)
-	mux.HandleFunc("POST /admin/reset", cfg.handleReset)
 	mux.HandleFunc("GET /api/metrics", cfg.handleMetrics)
 	mux.HandleFunc("GET /admin/metrics", cfg.handleAdminMetrics)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
+
+	// User-related routes
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
+	mux.HandleFunc("POST /api/login", cfg.handleLogin)
+
+	// Chirps-related routes
 	mux.HandleFunc("POST /api/chirps", cfg.handleCreateChirp)
 	mux.HandleFunc("GET /api/chirps", cfg.handleGetChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handleGetChirp)
-	mux.HandleFunc("POST /api/login", cfg.handleLogin)
-	log.Printf("Server run succesffuly on port: %s\n", port)
+	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
+
+	// Admin-related routes
+	mux.HandleFunc("POST /admin/reset", cfg.handleReset)
+
+	// Miscellaneous routes
+	mux.HandleFunc("POST /api/reset", cfg.handleReset)
+
+	// Start the server
+	log.Printf("Server running successfully on port: %s\n", port)
 	log.Fatal(server.ListenAndServe())
 }
 

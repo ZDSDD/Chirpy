@@ -37,7 +37,24 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseWithJson(mapUserToResponse(&user), w, http.StatusOK)
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Hour)
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	_, err = cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token:     refreshToken,
+		UserID:    user.ID,
+		ExpiresAt: time.Now().Add(time.Hour * 24 * 60),
+	})
+
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+
+	responseWithJson(mapToJson(&user, token, refreshToken), w, http.StatusOK)
 }
 
 func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -70,21 +87,25 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		responseWithJsonError(w, err.Error(), 500)
 		return
 	}
-	responseWithJson(mapUserToResponse(&user), w, http.StatusCreated)
+	responseWithJson(mapToJson(&user, "", ""), w, http.StatusCreated)
 }
 
-type UserResponse struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+type UserResponseLogin struct {
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Token        string    `json:"token,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
 }
 
-func mapUserToResponse(du *database.User) UserResponse {
-	return UserResponse{
-		ID:        du.ID,
-		Email:     du.Email,
-		CreatedAt: du.CreatedAt,
-		UpdatedAt: du.UpdatedAt,
+func mapToJson(du *database.User, token string, refreshToken string) UserResponseLogin {
+	return UserResponseLogin{
+		ID:           du.ID,
+		Email:        du.Email,
+		CreatedAt:    du.CreatedAt,
+		UpdatedAt:    du.UpdatedAt,
+		Token:        token,
+		RefreshToken: refreshToken,
 	}
 }
