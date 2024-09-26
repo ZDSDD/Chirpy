@@ -10,7 +10,15 @@ SELECT
 FROM
     chirps
 ORDER BY
-    created_at ASC;
+    CASE
+        WHEN $1 = 'asc' THEN created_at
+        ELSE NULL
+    END ASC,
+    CASE
+        WHEN $1 = 'desc' THEN created_at
+        ELSE NULL
+    END DESC;
+
 
 -- name: GetChirp :one
 SELECT
@@ -25,3 +33,17 @@ DELETE FROM
     chirps
 WHERE
     id = $1;
+
+-- name: GetChirpsByUser :many
+SELECT chirps.*
+FROM chirps
+WHERE user_id = $1
+ORDER BY
+    CASE
+        WHEN $2 = 'asc' THEN created_at
+        ELSE NULL
+    END ASC,
+    CASE
+        WHEN $2 = 'desc' THEN created_at
+        ELSE NULL
+    END DESC;

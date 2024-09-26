@@ -73,10 +73,35 @@ func (cfg *apiConfig) handleGetChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) handleGetChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := cfg.db.GetChirps(r.Context())
-	if err != nil {
-		responseWithJsonError(w, err.Error(), 500)
-		return
+	author_id := r.URL.Query().Get("author_id")
+	sortOrder := r.URL.Query().Get("sort") // Get sorting order from query params
+	// Default sorting order is "asc"
+	sortOrder = strings.ToLower(sortOrder)
+	if sortOrder != "desc" {
+		sortOrder = "asc"
+	}
+	var chirps []database.Chirp
+	var err error
+	if author_id != "" {
+		authorID, err := uuid.Parse(author_id)
+		if err != nil {
+			responseWithJsonError(w, "Invalid author ID", 400)
+			return
+		}
+		chirps, err = cfg.db.GetChirpsByUser(r.Context(), database.GetChirpsByUserParams{
+			UserID:  authorID,
+			Column2: sortOrder,
+		})
+		if err != nil {
+			responseWithJsonError(w, err.Error(), 500)
+			return
+		}
+	} else {
+		chirps, err = cfg.db.GetChirps(r.Context(), sortOrder)
+		if err != nil {
+			responseWithJsonError(w, err.Error(), 500)
+			return
+		}
 	}
 	var chirpsResponse []chirpResponse
 	for _, chirp := range chirps {
