@@ -45,15 +45,17 @@ func main() {
 	// User-related routes
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
 	mux.HandleFunc("POST /api/login", cfg.handleLogin)
+	mux.HandleFunc("PUT /api/users", cfg.requireBearerToken(cfg.handleUpdateUser))
 
 	// JWT-related routers
-	mux.HandleFunc("POST /api/refresh", cfg.requireBearerToken(cfg.handleRefreshToken))
+	mux.HandleFunc("POST /api/refresh", cfg.requireBearerToken(cfg.requireValidJWTToken(cfg.handleRefreshToken)))
 	mux.HandleFunc("POST /api/revoke", cfg.requireBearerToken(cfg.handleRevokeToken))
 
 	// Chirps-related routes
-	mux.HandleFunc("POST /api/chirps", cfg.handleCreateChirp)
+	mux.HandleFunc("POST /api/chirps", cfg.requireBearerToken(cfg.requireValidJWTToken(cfg.handleCreateChirp)))
 	mux.HandleFunc("GET /api/chirps", cfg.handleGetChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handleGetChirp)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.requireBearerToken(cfg.requireValidJWTToken(cfg.handleDeleteChirp)))
 	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 
 	// Admin-related routes

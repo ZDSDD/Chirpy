@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZDSDD/Chirpy/internal/auth"
 	"github.com/ZDSDD/Chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -61,12 +60,16 @@ func (cfg *apiConfig) handleGetChirp(w http.ResponseWriter, r *http.Request) {
 		responseWithJsonError(w, "Invalid chirp ID", 400)
 		return
 	}
-	chirpResponse, err := cfg.db.GetChirp(r.Context(), chirpID)
+	chirp, err := cfg.db.GetChirp(r.Context(), chirpID)
 	if err != nil {
-		responseWithJsonError(w, err.Error(), 500)
+		if strings.Contains(err.Error(), "no rows") {
+			responseWithJsonError(w, "Chirp not found", 404)
+		} else {
+			responseWithJsonError(w, err.Error(), 500)
+		}
 		return
 	}
-	responseWithJson(mapChirpToResponse(&chirpResponse), w, http.StatusOK)
+	responseWithJson(mapChirpToResponse(&chirp), w, http.StatusOK)
 }
 
 func (cfg *apiConfig) handleGetChirps(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +85,7 @@ func (cfg *apiConfig) handleGetChirps(w http.ResponseWriter, r *http.Request) {
 	responseWithJson(chirpsResponse, w, http.StatusOK)
 }
 
-func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request, _ string, user *database.User) {
 	type jsonPayload struct {
 		Body string `json:"body"`
 	}
@@ -92,24 +95,39 @@ func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) 
 		responseWithJsonError(w, "Body is required", 400)
 		return
 	}
-	//Check JWT token
-	tokenString, err := auth.GetBearerToken(r.Header)
-	userId, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
-
-	if err != nil {
-		responseWithJsonError(w, err.Error(), 401)
-		return
-	}
 
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   jp.Body,
-		UserID: userId,
+		UserID: user.ID,
 	})
 	if err != nil {
 		responseWithJsonError(w, err.Error(), 500)
 		return
 	}
 	responseWithJson(mapChirpToResponse(&chirp), w, http.StatusCreated)
+}
+
+func (cfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request, token string, user *database.User) {
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		responseWithJsonError(w, "Invalid chirp ID", 400)
+		return
+	}
+	chirp, err := cfg.db.GetChirp(r.Context(), chirpID)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 404)
+		return
+	}
+	if chirp.UserID != user.ID {
+		responseWithJsonError(w, "Forbidden", 403)
+		return
+	}
+	err = cfg.db.DeleteChirp(r.Context(), chirpID)
+	if err != nil {
+		responseWithJsonError(w, err.Error(), 404)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type chirpResponse struct {
