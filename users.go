@@ -163,6 +163,7 @@ type UserResponseLogin struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	Token        string    `json:"token,omitempty"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
+	IsChirpyRed  bool      `json:"is_chirpy_red"`
 }
 
 func mapToJson(du *database.User, token string, refreshToken string) UserResponseLogin {
@@ -173,6 +174,7 @@ func mapToJson(du *database.User, token string, refreshToken string) UserRespons
 		UpdatedAt:    du.UpdatedAt,
 		Token:        token,
 		RefreshToken: refreshToken,
+		IsChirpyRed:  du.IsChirpyRed,
 	}
 }
 
@@ -221,4 +223,45 @@ func (cfg *apiConfig) handleUpdateUser(w http.ResponseWriter, r *http.Request, t
 
 	responseWithJson(mapToJson(&updatedUser, "", ""), w, 200)
 
+}
+func (cfg *apiConfig) handleUpgradePolkaUser(w http.ResponseWriter, r *http.Request) {
+	type eventReqBody struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserId string `json:"user_id"`
+		} `json:"data"`
+	}
+
+	var eventReq eventReqBody
+	json.NewDecoder(r.Body).Decode(&eventReq)
+	if eventReq.Event == "" {
+		responseWithJsonError(w, "Event is required", 400)
+		return
+	}
+	if eventReq.Data.UserId == "" {
+		responseWithJsonError(w, "User ID is required", 400)
+		return
+	}
+	if eventReq.Event != "user.upgraded" {
+		responseWithJsonError(w, "we dont know how to handle other events", 204)
+		return
+	}
+	userId, err := uuid.Parse(eventReq.Data.UserId)
+	if err != nil {
+		responseWithJsonError(w, "Invalid user ID", 404)
+		return
+	}
+	_, err = cfg.db.UpdateIsChirpyRed(r.Context(), database.UpdateIsChirpyRedParams{
+		IsChirpyRed: true,
+		ID:          userId,
+	})
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			responseWithJsonError(w, "User not found", 404)
+			return
+		}
+		responseWithJsonError(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(204)
 }

@@ -46,6 +46,7 @@ func main() {
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
 	mux.HandleFunc("POST /api/login", cfg.handleLogin)
 	mux.HandleFunc("PUT /api/users", cfg.requireBearerToken(cfg.handleUpdateUser))
+	mux.HandleFunc("POST /api/polka/webhooks", cfg.handleUpgradePolkaUser)
 
 	// JWT-related routers
 	mux.HandleFunc("POST /api/refresh", cfg.requireBearerToken(cfg.requireValidJWTToken(cfg.handleRefreshToken)))
